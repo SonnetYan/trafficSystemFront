@@ -45,7 +45,6 @@ export default {
         this.height = +this.svg.attr("height");
         this.roadEnd = this.roadStart + this.roadWidth;
 
-
         this.westSideQueue1 = this.svg.append("rect")
             .attr("x", 0)
             .attr("y", this.height / 2 - this.roadHeight)
@@ -53,7 +52,6 @@ export default {
             .attr("height", this.roadHeight)
             .attr("class", "road")
             .attr("fill", this.queueColor1);
-
 
         this.westSideQueue2 = this.svg.append("rect")
             .attr("x", 0)
@@ -64,6 +62,21 @@ export default {
             .attr("fill", this.queueColor2);
 
 
+            this.westSideQueue1 = this.svg.append("rect")
+            .attr("x", this.roadEnd)
+            .attr("y", this.height / 2 - this.roadHeight)
+            .attr("width",this.roadStart )
+            .attr("height", this.roadHeight)
+            .attr("class", "road")
+            .attr("fill", this.queueColor1);
+
+        this.westSideQueue2 = this.svg.append("rect")
+            .attr("x", this.roadEnd)
+            .attr("y", this.height / 2)
+            .attr("width", this.roadStart)
+            .attr("height", this.roadHeight)
+            .attr("class", "road")
+            .attr("fill", this.queueColor2);
 
 
         this.trafficRoad1 = this.svg.append("rect")
@@ -73,7 +86,6 @@ export default {
             .attr("height", this.roadHeight)
             .attr("class", "road")
             .attr("fill", this.roadColor);
-
 
         this.trafficRoad2 = this.svg.append("rect")
             .attr("x", this.roadStart)
