@@ -1,12 +1,17 @@
 <template>
     <div>
+        <label for="speed-slider">Adjust Time Speed:</label>
         <input type="range" v-model="speed" min="1" max="10" />
+        <input id="speed-slider" type="range" v-model="timeSpeed" min="1" max="10" />
         <svg width="1000" height="600"></svg>
+        <div class="timer">Current Time: {{ typeof currentTime === 'number' ? currentTime.toFixed(2) : '0.00' }}</div>
+        <div class="objective-timer">Objective Time: {{ isNaN(objectiveTime) ? '0.00' : objectiveTime.toFixed(2) }}</div>
     </div>
 </template>
 
 <script>
 import * as d3 from 'd3';
+import sorted_data from '../data/sorted_data.json';
 
 export default {
     name: 'TrafficAnimation',
@@ -17,13 +22,14 @@ export default {
             height: 600,
             trafficRoad1: null,
             trafficRoad2: null,
-            eastSideQueue1 : null, //Car in the east-side is moving to west, so the queue in the eastSide is westMoving cars
-            eastSideQueue2 : null,
+            eastSideQueue1: null, //Car in the east-side is moving to west, so the queue in the eastSide is westMoving cars
+            eastSideQueue2: null,
             westSideQueue1: null,
             westSideQueue2: null,
             block: null,
             car1: null,
             car2: null,
+            timer: null,
             blockWidth: 50,
 
             roadWidth: 300,
@@ -31,15 +37,25 @@ export default {
             roadStart: 350,
             roadEnd: 520,
             carRadius: 10,
-
-            queueColor1: d3.rgb(172,250,198),
-            queueColor2 : d3.color("#17bd86ec"),
-            roadColor: d3.rgb(170, 238, 207),
+            eastMovingData:null,
+            queueColor1: d3.rgb(172, 250, 198),
+            queueColor2: d3.color("#17bd86ec"),
+            roadColor: d3.rgb(170, 238, 207), 
             road2Color: d3.color("#069e6bec"),
-            speed: 5
+            speed: 5,
+            simulationSpeedReduction: 100, //1 second = 1000, so this speed is used to adjust the simulation speed, displaySpeed = simulationTime *1000 / simulationSpeedReduction ;
+
+            carData:[],
+            timeSpeed: 5,
+            currentTime: 0,
+            objectiveTime: 0,
+            lastRender: null,
+            carsInQueue: 0
         }
     },
     mounted() {
+
+        this.carData = sorted_data.map(d => ({...d, processed: false}));
         this.svg = d3.select("svg");
         this.width = +this.svg.attr("width");
         this.height = +this.svg.attr("height");
@@ -48,7 +64,7 @@ export default {
         this.westSideQueue1 = this.svg.append("rect")
             .attr("x", 0)
             .attr("y", this.height / 2 - this.roadHeight)
-            .attr("width",this.roadStart )
+            .attr("width", this.roadStart)
             .attr("height", this.roadHeight)
             .attr("class", "road")
             .attr("fill", this.queueColor1);
@@ -62,22 +78,21 @@ export default {
             .attr("fill", this.queueColor2);
 
 
-            this.westSideQueue1 = this.svg.append("rect")
+        this.eastSideQueue1 = this.svg.append("rect")
             .attr("x", this.roadEnd)
             .attr("y", this.height / 2 - this.roadHeight)
-            .attr("width",this.roadStart )
+            .attr("width", this.roadStart)
             .attr("height", this.roadHeight)
             .attr("class", "road")
             .attr("fill", this.queueColor1);
 
-        this.westSideQueue2 = this.svg.append("rect")
+        this.eastSideQueue2 = this.svg.append("rect")
             .attr("x", this.roadEnd)
             .attr("y", this.height / 2)
             .attr("width", this.roadStart)
             .attr("height", this.roadHeight)
             .attr("class", "road")
             .attr("fill", this.queueColor2);
-
 
         this.trafficRoad1 = this.svg.append("rect")
             .attr("x", this.roadStart)
@@ -96,7 +111,7 @@ export default {
             .attr("fill", this.road2Color);
 
         this.block = this.svg.append("rect")
-            .attr("x", this.roadStart + (this.roadWidth  / 2) - (this.blockWidth / 2)) // Adjust block to the center of trafficRoad1
+            .attr("x", this.roadStart + (this.roadWidth / 2) - (this.blockWidth / 2)) // Adjust block to the center of trafficRoad1
             .attr("y", this.height / 2 - this.roadHeight)
             .attr("width", this.blockWidth)
             .attr("height", this.roadHeight)
@@ -117,17 +132,63 @@ export default {
 
         this.animate();
     },
+    beforeUnmount() {
+        cancelAnimationFrame(this.animationFrame);
+    },
     watch: {
         speed() {
             // Interrupt ongoing animations and restart the animation with the new speed
             this.car1.interrupt();
             this.car2.interrupt();
+            
             this.animate();
         }
     },
     methods: {
+
         animate() {
-            var speed  = 10000 / this.speed;
+            var speed = 10000 / this.speed;
+            this.animateCar1(speed);
+            this.animateCar2(speed);
+            this.animationQueueInWest();
+        },
+
+        animationQueueInWest(timestamp = 0)
+        {
+            if (this.lastRender === null) {
+                this.lastRender = timestamp;
+                this.animationFrame = requestAnimationFrame(this.animationQueueInWest);
+                return;
+            }
+            const delta = (timestamp - this.lastRender) / 1000;  
+            this.lastRender = timestamp;
+
+            this.objectiveTime += delta * this.timeSpeed;
+            this.carData.forEach((d) => {
+                if (!d.processed && this.objectiveTime >= d.eventArrivingTime) {
+                    d.processed = true;
+                    this.currentTime = parseFloat(d.eventArrivingTime);
+                    this.carsInQueue++;
+
+                    const car = this.svg.append("circle")
+                        .attr("cx", 0)
+                        .attr("cy", this.height / 2 - this.roadHeight / 2)
+                        .attr("r", this.carRadius)
+                        .attr("fill", "red");
+                    
+                    const finalPosition = this.roadStart - (this.carsInQueue * 2 * this.carRadius) + this.carRadius;
+
+                    car.transition()
+                        .duration((finalPosition - 0) / this.timeSpeed * 10)
+                        .attr("cx", finalPosition);
+                }
+            });
+
+            this.animationFrame = requestAnimationFrame(this.animationQueueInWest);
+        },
+
+
+        animateCar1(speed) {
             this.car1.transition()
                 .duration(speed)
                 .ease(d3.easeLinear)
@@ -170,7 +231,8 @@ export default {
                         .attr("cx", this.roadStart + this.carRadius)
                         .on("end", this.animate);
                 });
-
+        },
+        animateCar2(speed) {
             this.car2.transition()
                 .duration(speed)
                 .ease(d3.easeLinear)
