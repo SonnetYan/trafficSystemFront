@@ -37,15 +37,16 @@ export default {
             roadStart: 350,
             roadEnd: 520,
             carRadius: 10,
-            eastMovingData:null,
+            eastMovingData: null,
             queueColor1: d3.rgb(172, 250, 198),
             queueColor2: d3.color("#17bd86ec"),
-            roadColor: d3.rgb(170, 238, 207), 
+            roadColor: d3.rgb(170, 238, 207),
             road2Color: d3.color("#069e6bec"),
             speed: 5,
             simulationSpeedReduction: 100, //1 second = 1000, so this speed is used to adjust the simulation speed, displaySpeed = simulationTime *1000 / simulationSpeedReduction ;
 
-            carData:[],
+            carData: [],
+            carQueue: [],
             timeSpeed: 5,
             currentTime: 0,
             objectiveTime: 0,
@@ -55,7 +56,7 @@ export default {
     },
     mounted() {
 
-        this.carData = sorted_data.map(d => ({...d, processed: false}));
+        this.carData = sorted_data.map(d => ({ ...d, processed: false }));
         this.svg = d3.select("svg");
         this.width = +this.svg.attr("width");
         this.height = +this.svg.attr("height");
@@ -140,7 +141,7 @@ export default {
             // Interrupt ongoing animations and restart the animation with the new speed
             this.car1.interrupt();
             this.car2.interrupt();
-            
+
             this.animate();
         }
     },
@@ -151,20 +152,22 @@ export default {
             this.animateCar1(speed);
             this.animateCar2(speed);
             this.animationQueueInWest();
+            this.monitorQueueAndMoveCars();
         },
 
-        animationQueueInWest(timestamp = 0)
-        {
+
+
+        animationQueueInWest(timestamp = 0) {
             if (this.lastRender === null) {
                 this.lastRender = timestamp;
                 this.animationFrame = requestAnimationFrame(this.animationQueueInWest);
                 return;
             }
-            const delta = (timestamp - this.lastRender) / 1000;  
+            const delta = (timestamp - this.lastRender) / 1000;
             this.lastRender = timestamp;
 
             this.objectiveTime += delta * this.timeSpeed;
-            this.carData.forEach((d) => {
+            this.carData.forEach((d, index) => { // Add index to the forEach callback
                 if (!d.processed && this.objectiveTime >= d.eventArrivingTime) {
                     d.processed = true;
                     this.currentTime = parseFloat(d.eventArrivingTime);
@@ -175,17 +178,50 @@ export default {
                         .attr("cy", this.height / 2 - this.roadHeight / 2)
                         .attr("r", this.carRadius)
                         .attr("fill", "red");
-                    
+
                     const finalPosition = this.roadStart - (this.carsInQueue * 2 * this.carRadius) + this.carRadius;
+                    console.log(this.carsInQueue);
+                    console.log("finalPosition" + finalPosition)
 
                     car.transition()
                         .duration((finalPosition - 0) / this.timeSpeed * 10)
                         .attr("cx", finalPosition);
+
+                    // Add the car to the queue with its index
+                    this.carQueue.push({ car: car.node(), index });
                 }
             });
 
             this.animationFrame = requestAnimationFrame(this.animationQueueInWest);
         },
+
+        monitorQueueAndMoveCars() {
+            console.log("queue length" + this.carQueue.length);
+            for (let index = 0; index < this.carQueue.length; index++) {
+                const carObject = this.carQueue[index];
+                const car = d3.select(carObject.car);
+                const carData = this.carData[carObject.index];
+                const currentTime = this.objectiveTime;
+                const passingStartTime = parseFloat(carData.eventArrivingTime) + parseFloat(carData.waitingTime);
+                let self = this;
+                if (currentTime >= passingStartTime) {
+                    car.transition()
+                        .duration(1000)
+                        .ease(d3.easeLinear)
+                        .attr("cx", self.roadStart + self.carRadius)
+                        .on('end', () => {
+                            car.remove();
+                        });
+                    this.carQueue.splice(index, 1); // Remove the car from the queue
+                    index--; // Adjust the index to account for the removed car
+                    this.carsInQueue--;
+                }
+
+            }
+
+            requestAnimationFrame(this.monitorQueueAndMoveCars);
+        },
+
 
 
         animateCar1(speed) {
